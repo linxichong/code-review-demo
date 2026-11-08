@@ -1,0 +1,10 @@
+id: ORDER.API.NOT_FOUND
+category: correctness
+severity: high
+scope:
+  languages: [python]
+  paths: [src/order_api.py]
+  keywords: [order_not_found]
+instruction: >
+  注文照会の契約では、存在しない注文を HTTP 404 と order_not_found で返す。
+  成功ステータスに変更すると呼出側が見つからない注文を正常結果と扱うため、指摘する。

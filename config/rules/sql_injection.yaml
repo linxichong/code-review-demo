@@ -1,0 +1,9 @@
+id: SECURITY.SQL_INJECTION
+category: security
+severity: critical
+scope:
+  languages: [python]
+  keywords: [execute(, "SELECT "]
+instruction: >
+  外部入力を SQL 文字列へ直接埋め込んで実行する箇所を確認する。
+  プレースホルダーと別引数で渡した値は SQL 注入として指摘しない。

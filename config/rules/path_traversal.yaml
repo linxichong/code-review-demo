@@ -1,0 +1,9 @@
+id: SECURITY.PATH_TRAVERSAL
+category: security
+severity: critical
+scope:
+  languages: [python]
+  keywords: [.read_text(]
+instruction: >
+  外部入力をパスへ連結して読み取る場合は、正規化したパスが許可範囲内にあるか確認する。
+  許可範囲の検査がない読み取りを指摘する。
