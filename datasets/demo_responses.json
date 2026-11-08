@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "model": "order-desk-synthetic-demo-v1",
+  "default_result": {
+    "payload": {
+      "schema_version": 1,
+      "findings": []
+    }
+  },
+  "cases": [
+    {
+      "case_id": "unsafe-email-query",
+      "match_all": [
+        "src/order_repository.py",
+        "    return connection.execute(statement).fetchone()"
+      ],
+      "result": {
+        "payload": {
+          "schema_version": 1,
+          "findings": [
+            {
+              "file": "src/order_repository.py",
+              "start_line": 14,
+              "end_line": 14,
+              "category": "security",
+              "issue_type": "SQL_INJECTION",
+              "rule_id": "SECURITY.SQL_INJECTION",
+              "primary_entity": "connection.execute",
+              "severity": "critical",
+              "title": "外部入力を組み込んだ SQL を実行している",
+              "description": "email が SQL 文字列に直接挿入され、クエリ条件を変更できます。",
+              "evidence": {
+                "quote": "    return connection.execute(statement).fetchone()",
+                "reason": "直前の statement に email が f-string で展開されています。"
+              },
+              "suggestion": "WHERE customer_email = ? とし、email を別引数として渡してください。",
+              "needs_context": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case_id": "unsafe-template-preview",
+      "match_all": [
+        "src/notifications.py",
+        "    return (directory / name).read_text(encoding=\"utf-8\")"
+      ],
+      "result": {
+        "payload": {
+          "schema_version": 1,
+          "findings": [
+            {
+              "file": "src/notifications.py",
+              "start_line": 14,
+              "end_line": 14,
+              "category": "security",
+              "issue_type": "PATH_TRAVERSAL",
+              "rule_id": "SECURITY.PATH_TRAVERSAL",
+              "primary_entity": "read_text",
+              "severity": "critical",
+              "title": "テンプレート範囲外のファイルを読み取れる",
+              "description": "利用者が指定する name に親ディレクトリを含めると、テンプレート外を参照できます。",
+              "evidence": {
+                "quote": "    return (directory / name).read_text(encoding=\"utf-8\")",
+                "reason": "読み取り前に正規化後のパスが基準内にあるかを検査していません。"
+              },
+              "suggestion": "パスを正規化し、基準ディレクトリ内であることを確認してください。",
+              "needs_context": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case_id": "missing-order-contract",
+      "match_all": [
+        "src/order_api.py",
+        "        return 200, {\"error\": \"order_not_found\"}"
+      ],
+      "result": {
+        "payload": {
+          "schema_version": 1,
+          "findings": [
+            {
+              "file": "src/order_api.py",
+              "start_line": 10,
+              "end_line": 10,
+              "category": "correctness",
+              "issue_type": "NOT_FOUND",
+              "rule_id": "ORDER.API.NOT_FOUND",
+              "primary_entity": "lookup_order",
+              "severity": "high",
+              "title": "注文が存在しない場合の応答契約が変わっている",
+              "description": "注文が存在しない場合に HTTP 200 を返し、呼出側が成功と判断します。",
+              "evidence": {
+                "quote": "        return 200, {\"error\": \"order_not_found\"}",
+                "reason": "この分岐は order_not_found ですが成功ステータスを返しています。"
+              },
+              "suggestion": "プロジェクトの契約どおり HTTP 404 を返してください。",
+              "needs_context": false
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

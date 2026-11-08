@@ -1,0 +1,11 @@
+prompt_version: 1
+system_instruction: 変更行と確認できる根拠に基づき、指定された形式でコードレビューを返してください。
+user_template: |
+  ファイル
+  {file_list}
+  ルール
+  {rules_block}
+  メモリ
+  {memories_block}
+  差分
+  {diff_block}

@@ -1,0 +1,11 @@
+schema_version: 1
+project_id: order-desk-demo
+database:
+  path: .review/local.db
+llm:
+  provider: dataset
+  dataset_path: datasets/demo_responses.json
+review:
+  mode: rules
+security:
+  allow_external_source: false
