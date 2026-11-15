@@ -1,0 +1,20 @@
+schema_version: 1
+project_id: order-desk-demo
+database:
+  path: .review/ai-review.db
+llm:
+  provider: ai_gateway
+review:
+  mode: rules
+  context_tools_enabled: false
+  reflection_enabled: false
+security:
+  allow_external_source: true
+scm:
+  enabled: true
+  provider: github
+  repository_external_id: linxichong/code-review-demo
+  bot_actor_external_id: linxichong
+  include_drafts: false
+  publish_enabled: false
+  feedback_sync_enabled: false

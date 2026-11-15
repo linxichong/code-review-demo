@@ -1,0 +1,111 @@
+name: AI 审查
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: github.repository == 'linxichong/code-review-demo' && github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+    steps:
+      # 只检出受信任的基准提交。PR 提交仅作为 Git 差异输入。
+      - name: 检出 PR 基准提交
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: target
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: 获取并核对 PR 提交
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$PR_NUMBER" =~ ^[1-9][0-9]*$ || ! "$PR_BASE_SHA" =~ ^[0-9a-f]{40}$ || ! "$PR_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            printf '%s\n' 'PR 编号或提交 SHA 无效。' >&2
+            exit 1
+          fi
+          if [[ "$(git -C target rev-parse HEAD)" != "$PR_BASE_SHA" ]]; then
+            printf '%s\n' '工作树与事件中的 PR 基准提交不一致。' >&2
+            exit 1
+          fi
+          git -C target fetch --no-tags --no-recurse-submodules origin "refs/pull/$PR_NUMBER/head"
+          if [[ "$(git -C target rev-parse FETCH_HEAD)" != "$PR_HEAD_SHA" ]]; then
+            printf '%s\n' 'PR 提交已变化，等待新的审查运行。' >&2
+            exit 1
+          fi
+
+      - name: 检出固定版本的审查工具
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: linxichong/SelfImprovingCodeReview
+          ref: 542e8842f500cdf5d572f7d6a0c099f09b6cb02b
+          path: review-tool
+          persist-credentials: false
+
+      - name: 安装审查运行环境
+        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version-file: review-tool/pyproject.toml
+          python-version-file: review-tool/.python-version
+          enable-cache: false
+
+      - name: 安装锁定的依赖
+        working-directory: review-tool
+        run: uv sync --frozen --no-dev
+
+      - name: 运行试审查
+        working-directory: review-tool
+        shell: bash
+        env:
+          REVIEW_LLM_MODEL: ${{ vars.REVIEW_LLM_MODEL }}
+          REVIEW_LLM_API_KEY: ${{ secrets.REVIEW_LLM_API_KEY }}
+          REVIEW_SCM_TOKEN: ${{ secrets.REVIEW_SCM_TOKEN }}
+        run: |
+          set -euo pipefail
+          for setting in REVIEW_LLM_MODEL REVIEW_LLM_API_KEY REVIEW_SCM_TOKEN; do
+            if [[ -z "${!setting//[[:space:]]/}" ]]; then
+              printf '缺少仓库审查配置 %s。\n' "$setting" >&2
+              exit 1
+            fi
+          done
+          result="$RUNNER_TEMP/ai-review-result.json"
+          uv run --frozen --no-dev review scm review \
+            --repository ../target --config ../target/.github/review.yaml \
+            --change "$PR_NUMBER" --output "$result"
+          uv run --frozen --no-dev python - "$result" "$PR_BASE_SHA" "$PR_HEAD_SHA" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          result, base_sha, head_sha = sys.argv[1:]
+          document = json.loads(Path(result).read_text(encoding="utf-8"))
+          scm = document["scm"]
+          if scm["base_sha"] != base_sha or scm["head_sha"] != head_sha:
+              raise SystemExit("审查的提交与触发事件不一致，停止上传结果。")
+          if document["run"]["status"] != "success" or scm["dry_run"] is not True:
+              raise SystemExit("审查未成功完成试运行，停止上传结果。")
+          PY
+
+      - name: 保存审查结果
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ai-review-pr-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/ai-review-result.json
+          if-no-files-found: error
+          retention-days: 7
