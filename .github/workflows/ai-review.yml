@@ -85,16 +85,39 @@ jobs:
             fi
           done
           result="$RUNNER_TEMP/ai-review-result.json"
+          review_exit=0
           uv run --frozen --no-dev review scm review \
             --repository ../target --config ../target/.github/review.yaml \
-            --change "$PR_NUMBER" --output "$result"
-          uv run --frozen --no-dev python - "$result" "$PR_BASE_SHA" "$PR_HEAD_SHA" <<'PY'
+            --change "$PR_NUMBER" --output "$result" || review_exit=$?
+          uv run --frozen --no-dev python - "$result" "$PR_BASE_SHA" "$PR_HEAD_SHA" "$review_exit" <<'PY'
           import json
+          import re
           import sys
           from pathlib import Path
 
-          result, base_sha, head_sha = sys.argv[1:]
-          document = json.loads(Path(result).read_text(encoding="utf-8"))
+          result, base_sha, head_sha, exit_code = sys.argv[1:]
+          path = Path(result)
+          cli_exit = int(exit_code)
+          if cli_exit and not path.is_file():
+              raise SystemExit(cli_exit)
+          document = json.loads(path.read_text(encoding="utf-8"))
+          if cli_exit:
+              error_types = {
+                  "APIConnectionError", "APIError", "AuthenticationError", "BadRequestError",
+                  "InternalServerError", "RateLimitError", "ServiceUnavailableError", "Timeout",
+              }
+              codes = set()
+              for error in document["errors"]:
+                  code = error["code"]
+                  if re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_]{0,79}", code):
+                      detail = (error.get("message") or "").rpartition(": ")[2]
+                      codes.add(f"{code}/{detail}" if detail in error_types else code)
+              failed = document["metrics"]["failed_bundle_count"]
+              print(
+                  f"试审失败，CLI 退出码 {cli_exit}，失败单元 {failed}，"
+                  f"错误代码 {', '.join(sorted(codes)) or '无'}。"
+              )
+              raise SystemExit(cli_exit)
           scm = document["scm"]
           if scm["base_sha"] != base_sha or scm["head_sha"] != head_sha:
               raise SystemExit("审查的提交与触发事件不一致，停止上传结果。")

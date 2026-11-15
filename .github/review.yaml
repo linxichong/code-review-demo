@@ -4,6 +4,7 @@ database:
   path: .review/ai-review.db
 llm:
   provider: ai_gateway
+  max_retries: 0
 review:
   mode: rules
   context_tools_enabled: false
